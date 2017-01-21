@@ -57,15 +57,20 @@ def rand_less_than(upper_bound, nbits):
 
 def fermat_test(p, nbits):
     """Fermat primality test"""
-    a = rand_int(nbits)
-    # pow can accept a base larger than the modulus, so we don't care if a < p
-    return pow(a, p - 1, p) == 1
+    for _ in range(5):
+        a = rand_int(nbits)
+        if not pow(a, p - 1, p) == 1:
+            return False
+    return True
+
+def prime_test(p, nbits):
+    return fermat_test(p, nbits)
 
 def rand_prime(nbits):
     is_prime = False
     while not is_prime:
         p = rand_int(nbits)
-        is_prime = fermat_test(p, nbits)
+        is_prime = prime_test(p, nbits)
     return p
 
 def choose_q(N):
@@ -76,7 +81,7 @@ def choose_p(L, N, q):
     is_prime = False
     while not is_prime:
         p = (q*rand_int(k)) + 1
-        is_prime = fermat_test(p, L)
+        is_prime = prime_test(p, L)
     return p
 
 def choose_g(L, N, p, q):
@@ -85,7 +90,7 @@ def choose_g(L, N, p, q):
         g = pow(h, (p - 1)//q, p)
         if pow(g, q, p) == 1:
             return g
-        h = rand_less_than(p, N)
+        h = rand_less_than(p, L)
 
 def choose_parameters(L, N):
     """Returns DSA parameters p, q, g"""
@@ -98,20 +103,18 @@ def choose_keypair(parameters):
     x = rand_less_than(parameters.q, parameters.N)
     return Keypair(x, pow(parameters.g, x, parameters.p), parameters)
 
-def do_hash(data):
-    h = hashlib.sha256()
-    h.update(data)
-    return h.digest()
-
-def digest(data, parameters):
-    i = int.from_bytes(do_hash(data), byteorder='little')
-    return pow(i, (parameters.p - 1)//parameters.q, parameters.p)
-
 def int_to_bytes(in_int):
     i = in_int
     byte_length = ((i).bit_length() + 7) // 8
     return i.to_bytes(byte_length, 'little')
 
+def do_hash(data):
+    '''hash helper'''
+    h = hashlib.sha256()
+    h.update(data)
+    return h.digest()
+
+# H
 def full_domain_hash(data, target_length):
     tl_bytes = target_length // 8
     digest_size = 32
@@ -120,6 +123,12 @@ def full_domain_hash(data, target_length):
     for i in range(ncycles):
         out.extend(do_hash(data + int_to_bytes(i)))
     return bytes(out[:tl_bytes])
+
+# F
+def digest(data, parameters):
+    hashed = full_domain_hash(data, parameters.L)
+    i = int.from_bytes(hashed, byteorder='little') % parameters.p
+    return pow(i, (parameters.p - 1)//parameters.q, parameters.p)
 
 class Signer:
     def __init__(self, parameters):
