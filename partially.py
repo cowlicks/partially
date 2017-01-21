@@ -113,12 +113,13 @@ def int_to_bytes(in_int):
     return i.to_bytes(byte_length, 'little')
 
 def full_domain_hash(data, target_length):
+    tl_bytes = target_length // 8
     digest_size = 32
-    ncycles = (target_length // digest_size) + 1
+    ncycles = (tl_bytes // digest_size) + 1
     out = bytearray()
     for i in range(ncycles):
         out.extend(do_hash(data + int_to_bytes(i)))
-    return bytes(out[:target_length])
+    return bytes(out[:tl_bytes])
 
 class Signer:
     def __init__(self, parameters):
@@ -179,11 +180,10 @@ def check(rho, omega, delta, sigma, z, msg, y, parameters):
     two = (pow(parameters.g, delta, parameters.p) *
            pow(z, sigma, parameters.p)) % parameters.p
 
+    lhs = int_to_bytes(omega + sigma % parameters.p)
     rhs = full_domain_hash(
             int_to_bytes(one) + int_to_bytes(two) + int_to_bytes(z) + msg,
             parameters.N)
-    lhs = int_to_bytes((omega + sigma) % parameters.p)
-
     return rhs == lhs
 
 if __name__ == '__main__':
@@ -197,7 +197,7 @@ if __name__ == '__main__':
     user = User(params, signer.keypair.y)
     user.start(info, msg)
 
-    a, b = signer.one(b'info')
+    a, b = signer.one(info)
     e = user.two(a, b)
     r, c, s, d = signer.three(e)
     rho, omega, delta, sigma = user.four(r, c, s, d)
