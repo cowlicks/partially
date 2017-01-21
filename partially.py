@@ -19,14 +19,7 @@ def rand_int(nbits):
     return int.from_bytes(os.urandom(nbits//8), byteorder='little')
 
 def rand_less_than(upper_bound, nbits):
-    ''' This looks complicated :/
-
-    We start at the MSB and choose a random value less than or equal to the
-    corresponding input byte.  If its equal to the corresponding input byte, we
-    set the out byte equal to this and proceed to the next byte. If it is less
-    than, we set the output byte.  Then choose the remaining bytes randomly.
-
-    '''
+    ''' This looks complicated :/'''
     nbytes = nbits // 8
     if nbits % 8 != 0:
         raise ValueError("nbits must be divisible by 8 so it can be broken into bytes")
@@ -35,7 +28,7 @@ def rand_less_than(upper_bound, nbits):
     less_bytes = []
 
     # choose random MSB's that are less than or equal to the upper_bound
-    for i in range(nbytes):
+    for i in reversed(range(nbytes)):
         ub = in_bytes[i]
 
         rand_byte = ord(os.urandom(1))
@@ -46,19 +39,22 @@ def rand_less_than(upper_bound, nbits):
 
         if rand_byte < ub:
             break
-        if i == nbytes - 1:
+
+        if i == 0:
             # we accidentally choose the same number!
             # try again
             return rand_less_than(upper_bound, nbits)
 
-    out_bytes = bytes(less_bytes) + os.urandom(nbytes - i)
-    return int.from_bytes(out_bytes, 'little')
+    out_bytes = os.urandom(nbytes - i) + bytes(reversed(less_bytes))
+    out = int.from_bytes(out_bytes, 'little')
+    assert out < upper_bound
+    return out
 
 
 def fermat_test(p, nbits):
     """Fermat primality test"""
     for _ in range(5):
-        a = rand_int(nbits)
+        a = rand_less_than(p, nbits)
         if not pow(a, p - 1, p) == 1:
             return False
     return True
@@ -114,7 +110,6 @@ def do_hash(data):
     h.update(data)
     return h.digest()
 
-# H
 def full_domain_hash(data, target_length):
     tl_bytes = target_length // 8
     digest_size = 32
@@ -143,7 +138,8 @@ class Signer:
         self.z = digest(info, self.parameters)
 
         self.a = pow(self.g, self.u, self.p)
-        self.b = pow(self.g, self.s, self.p) * pow(self.z, self.d, self.p) % self.p
+        self.b = (pow(self.g, self.s, self.p) *
+                  pow(self.z, self.d, self.p)) % self.p
         return self.a, self.b
 
     def three(self, e):
@@ -165,8 +161,10 @@ class User:
         self.msg = msg
 
     def two(self, a, b):
-        alpha = a * pow(self.g, self.t1, self.p) * pow(self.y, self.t2, self.p) % self.p
-        beta = b * pow(self.g, self.t3, self.p) * pow(self.z, self.t4, self.p) % self.p
+        alpha = (a * pow(self.g, self.t1, self.p) *
+                     pow(self.y, self.t2, self.p)) % self.p
+        beta = (b * pow(self.g, self.t3, self.p) *
+                    pow(self.z, self.t4, self.p)) % self.p
 
         e_bytes = bytearray()
         for v in (alpha, beta, self.z):
@@ -189,7 +187,7 @@ def check(rho, omega, delta, sigma, z, msg, y, parameters):
     two = (pow(parameters.g, delta, parameters.p) *
            pow(z, sigma, parameters.p)) % parameters.p
 
-    lhs = int_to_bytes(omega + sigma % parameters.p)
+    lhs = int_to_bytes((omega + sigma) % parameters.p)
     rhs = full_domain_hash(
             int_to_bytes(one) + int_to_bytes(two) + int_to_bytes(z) + msg,
             parameters.N)
@@ -211,4 +209,13 @@ if __name__ == '__main__':
     r, c, s, d = signer.three(e)
     rho, omega, delta, sigma = user.four(r, c, s, d)
 
+    print("parameter tests:")
+    print(((params.p - 1 )% params.q == 0))
+    print(((params.p - 1) % params.q**2) != 0)
+    print(prime_test(params.p, params.L))
+    print(prime_test(params.q, params.N))
+    print(pow(params.g, params.q, params.p) == 1)
+    print(pow(user.z, params.q, params.p) == 1)  # z is in <g>
+
+    print("final check:")
     print(check(rho, omega, delta, sigma, user.z, msg, user.y, params))
