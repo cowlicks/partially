@@ -76,7 +76,7 @@ def choose_p(L, N, q):
     is_prime = False
     while not is_prime:
         p = (q*rand_int(k)) + 1
-        is_prime = fermat_test(p, N)
+        is_prime = fermat_test(p, L)
     return p
 
 def choose_g(L, N, p, q):
