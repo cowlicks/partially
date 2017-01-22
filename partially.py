@@ -32,8 +32,31 @@ def fermat_test(p, nbits):
             return False
     return True
 
+def miller_rabin_test(p, nbits):
+    k = 5
+    # factor
+    r = 1
+    while (pow(2, r) & p) != pow(2, r):
+        r += 1
+    d = p // pow(2, r)
+    for _ in range(k):
+        a = rand_less_than(p - 2, nbits)
+        x = pow(a, d, p)
+        if x == 1 or x == p - 1:
+            continue
+        for _ in range(r - 1):
+            x = pow(x, 2, p)
+            if x == 1:
+                return False
+            if  x == p - 1:
+                break
+        else:
+            return False
+    return True
+
 def prime_test(p, nbits):
-    return fermat_test(p, nbits)
+    #return fermat_test(p, nbits)
+    return miller_rabin_test(p, nbits)
 
 def rand_prime(nbits):
     is_prime = False
