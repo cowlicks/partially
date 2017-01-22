@@ -19,37 +19,10 @@ def rand_int(nbits):
     return int.from_bytes(os.urandom(nbits//8), byteorder='little')
 
 def rand_less_than(upper_bound, nbits):
-    ''' This looks complicated :/'''
-    nbytes = nbits // 8
-    if nbits % 8 != 0:
-        raise ValueError("nbits must be divisible by 8 so it can be broken into bytes")
-
-    in_bytes = list(upper_bound.to_bytes(nbytes, byteorder='little'))
-    less_bytes = []
-
-    # choose random MSB's that are less than or equal to the upper_bound
-    for i in reversed(range(nbytes)):
-        ub = in_bytes[i]
-
-        rand_byte = ord(os.urandom(1))
-        while rand_byte > ub:
-            rand_byte = ord(os.urandom(1))
-
-        less_bytes.append(rand_byte)
-
-        if rand_byte < ub:
-            break
-
-        if i == 0:
-            # we accidentally choose the same number!
-            # try again
-            return rand_less_than(upper_bound, nbits)
-
-    out_bytes = os.urandom(nbytes - i) + bytes(reversed(less_bytes))
-    out = int.from_bytes(out_bytes, 'little')
-    assert out < upper_bound
-    return out
-
+    while True:
+        r = rand_int(nbits)
+        if r < upper_bound:
+            return r
 
 def fermat_test(p, nbits):
     """Fermat primality test"""
@@ -210,7 +183,7 @@ if __name__ == '__main__':
     rho, omega, delta, sigma = user.four(r, c, s, d)
 
     print("parameter tests:")
-    print(((params.p - 1 )% params.q == 0))
+    print(((params.p - 1) % params.q == 0))
     print(((params.p - 1) % params.q**2) != 0)
     print(prime_test(params.p, params.L))
     print(prime_test(params.q, params.N))
