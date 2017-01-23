@@ -1,40 +1,46 @@
-"""
-Notes:
-    * I need a better prime test. I should switch to Rabbin-Miller.
-    * In some cases here I get a random int that is supposed to be less than
-      some upper bounding number. But I ignore this when we are doing
-      arithmetic mod that upper bounding number.
+'''
+This is an implemention of the partially blind signature scheme from the paper:
 
-"""
+Provably Secure Partially Blind Signatures
+Masayuki ABE and Tatsuaki OKAMOTO
+'''
 import os
 from collections import namedtuple
 import hashlib
 
+
 Parameters = namedtuple('Parameters', ['L', 'N', 'p', 'q', 'g'])
 Keypair = namedtuple('Keypair', ['x', 'y', 'parameters'])
 
+
+### Math helper functions ###
 def rand_int(nbits):
     if nbits % 8 != 0:
-        raise ValueError("nbits must be divisible by 8 so it can be broken into bytes")
+        raise ValueError("nbits must be divisible by 8 so it can be broken"
+                         " into bytes.")
     return int.from_bytes(os.urandom(nbits//8), byteorder='little')
 
+
 def rand_less_than(upper_bound, nbits):
+    '''This could be smarter.'''
     while True:
         r = rand_int(nbits)
         if r < upper_bound:
             return r
 
+
 def fermat_test(p, nbits):
-    """Fermat primality test"""
+    '''Fermat primality test'''
     for _ in range(5):
         a = rand_less_than(p, nbits)
         if not pow(a, p - 1, p) == 1:
             return False
     return True
 
+
 def miller_rabin_test(p, nbits):
-    k = 5
-    # factor
+    '''Miller-Rabin primality test'''
+    k = 5  # accuracy parameter, this should be turned up in practice
     r = 1
     while (pow(2, r) & p) != pow(2, r):
         r += 1
@@ -48,15 +54,16 @@ def miller_rabin_test(p, nbits):
             x = pow(x, 2, p)
             if x == 1:
                 return False
-            if  x == p - 1:
+            if x == p - 1:
                 break
         else:
             return False
     return True
 
+
 def prime_test(p, nbits):
-    #return fermat_test(p, nbits)
     return miller_rabin_test(p, nbits)
+
 
 def rand_prime(nbits):
     is_prime = False
@@ -65,8 +72,11 @@ def rand_prime(nbits):
         is_prime = prime_test(p, nbits)
     return p
 
+
+### DSA functions ###
 def choose_q(N):
     return rand_prime(N)
+
 
 def choose_p(L, N, q):
     k = L - N
@@ -76,6 +86,7 @@ def choose_p(L, N, q):
         is_prime = prime_test(p, L)
     return p
 
+
 def choose_g(L, N, p, q):
     h = 2
     while True:
@@ -84,44 +95,54 @@ def choose_g(L, N, p, q):
             return g
         h = rand_less_than(p, L)
 
+
 def choose_parameters(L, N):
-    """Returns DSA parameters p, q, g"""
+    '''Returns DSA parameters p, q, g'''
     q = choose_q(N)
     p = choose_p(L, N, q)
     g = choose_g(L, N, p, q)
     return Parameters(L, N, p, q, g)
 
+
 def choose_keypair(parameters):
     x = rand_less_than(parameters.q, parameters.N)
     return Keypair(x, pow(parameters.g, x, parameters.p), parameters)
+
 
 def int_to_bytes(in_int):
     i = in_int
     byte_length = ((i).bit_length() + 7) // 8
     return i.to_bytes(byte_length, 'little')
 
+
+### Hashing functions ###
 def do_hash(data):
     '''hash helper'''
     h = hashlib.sha256()
     h.update(data)
     return h.digest()
 
+
 def full_domain_hash(data, target_length):
     tl_bytes = target_length // 8
-    digest_size = 32
+    digest_size = hashlib.sha256().digest_size
     ncycles = (tl_bytes // digest_size) + 1
     out = bytearray()
     for i in range(ncycles):
         out.extend(do_hash(data + int_to_bytes(i)))
     return bytes(out[:tl_bytes])
 
-# F
+
 def digest(data, parameters):
+    '''F hash function from paper'''
     hashed = full_domain_hash(data, parameters.L)
     i = int.from_bytes(hashed, byteorder='little') % parameters.p
     return pow(i, (parameters.p - 1)//parameters.q, parameters.p)
 
+
+### Protocol stuff ###
 class Signer:
+    '''Signer S from the paper'''
     def __init__(self, parameters):
         self.parameters = parameters
         self.L, self.N, self.p, self.q, self.g = tuple(parameters)
@@ -143,7 +164,9 @@ class Signer:
         self.r = (self.u - (self.c * self.keypair.x)) % self.q
         return self.r, self.c, self.s, self.d
 
+
 class User:
+    '''User U from the paper'''
     def __init__(self, parameters, pubkey):
         self.parameters = parameters
         self.L, self.N, self.p, self.q, self.g = tuple(parameters)
@@ -158,9 +181,9 @@ class User:
 
     def two(self, a, b):
         alpha = (a * pow(self.g, self.t1, self.p) *
-                     pow(self.y, self.t2, self.p)) % self.p
+                 pow(self.y, self.t2, self.p)) % self.p
         beta = (b * pow(self.g, self.t3, self.p) *
-                    pow(self.z, self.t4, self.p)) % self.p
+                pow(self.z, self.t4, self.p)) % self.p
 
         e_bytes = bytearray()
         for v in (alpha, beta, self.z):
@@ -177,17 +200,21 @@ class User:
         sigma = (d + self.t4) % self.q
         return rho, omega, delta, sigma
 
-def check(rho, omega, delta, sigma, z, msg, y, parameters):
-    one = (pow(parameters.g, rho, parameters.p) *
-           pow(y, omega, parameters.p)) % parameters.p
-    two = (pow(parameters.g, delta, parameters.p) *
-           pow(z, sigma, parameters.p)) % parameters.p
 
-    lhs = int_to_bytes((omega + sigma) % parameters.p)
-    rhs = full_domain_hash(
-            int_to_bytes(one) + int_to_bytes(two) + int_to_bytes(z) + msg,
-            parameters.N)
+def check(rho, omega, delta, sigma, z, msg, y, parameters):
+    '''Signatuer verification'''
+    lhs = int_to_bytes((omega + sigma) % parameters.q)
+
+    rhs_one = (pow(parameters.g, rho, parameters.p) *
+               pow(y, omega, parameters.p)) % parameters.p
+    rhs_two = (pow(parameters.g, delta, parameters.p) *
+               pow(z, sigma, parameters.p)) % parameters.p
+
+    rhs_hash = full_domain_hash(int_to_bytes(rhs_one) + int_to_bytes(rhs_two) +
+                                int_to_bytes(z) + msg, parameters.N)
+    rhs = int_to_bytes(int.from_bytes(rhs_hash, 'little') % parameters.q)
     return rhs == lhs
+
 
 if __name__ == '__main__':
     L, N = 1024, 160
@@ -205,13 +232,17 @@ if __name__ == '__main__':
     r, c, s, d = signer.three(e)
     rho, omega, delta, sigma = user.four(r, c, s, d)
 
-    print("parameter tests:")
-    print(((params.p - 1) % params.q == 0))
-    print(((params.p - 1) % params.q**2) != 0)
-    print(prime_test(params.p, params.L))
-    print(prime_test(params.q, params.N))
-    print(pow(params.g, params.q, params.p) == 1)
-    print(pow(user.z, params.q, params.p) == 1)  # z is in <g>
+    # p has proper form
+    assert (params.p - 1) % params.q == 0
+    # requirement to use this F
+    assert ((params.p - 1) % params.q**2) != 0
+    # test params are prime
+    assert prime_test(params.p, params.L)
+    assert prime_test(params.q, params.N)
+    # g has proper form
+    assert pow(params.g, params.q, params.p) == 1
+    # z is in g
+    assert pow(user.z, params.q, params.p) == 1
 
-    print("final check:")
-    print(check(rho, omega, delta, sigma, user.z, msg, user.y, params))
+    # signature works
+    assert check(rho, omega, delta, sigma, user.z, msg, user.y, params)
