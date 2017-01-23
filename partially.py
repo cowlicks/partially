@@ -148,11 +148,12 @@ class Signer:
         self.L, self.N, self.p, self.q, self.g = tuple(parameters)
         self.keypair = choose_keypair(self.parameters)
 
-    def one(self, info):
+    def start(self, info):
+        self.z = digest(info, self.parameters)
+
+    def one(self):
         usd = [rand_less_than(self.q, self.N) for _ in range(3)]
         self.u, self.s, self.d = usd
-
-        self.z = digest(info, self.parameters)
 
         self.a = pow(self.g, self.u, self.p)
         self.b = (pow(self.g, self.s, self.p) *
@@ -223,11 +224,12 @@ if __name__ == '__main__':
 
     params = choose_parameters(L, N)
     signer = Signer(params)
+    signer.start(info)
 
     user = User(params, signer.keypair.y)
     user.start(info, msg)
 
-    a, b = signer.one(info)
+    a, b = signer.one()
     e = user.two(a, b)
     r, c, s, d = signer.three(e)
     rho, omega, delta, sigma = user.four(r, c, s, d)

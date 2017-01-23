@@ -8,19 +8,21 @@ Here is a demo of the current usage.
     L, N = 1024, 160
     # Unblinded info the signer and user both agree on out of channel.
     info = b'Time to live'
-    # BLinded part of the signature.
+    # Blinded part of the message
     msg = b'A commodity takes on, like the added meaning invested in a fetishized object, the value of the labor that went into making it.'
 
     params = choose_parameters(L, N)
     signer = Signer(params)
+    signer.start(info)
 
-    user = User(params, signer.keypair.y)
+    user = User(params, signer.keypair.y) # y is the public key
     user.start(info, msg)
 
-    a, b = signer.one(info)
+    a, b = signer.one()
     e = user.two(a, b)
     r, c, s, d = signer.three(e)
     rho, omega, delta, sigma = user.four(r, c, s, d)
+
 
     assert check(rho, omega, delta, sigma, user.z, msg, user.y, params)
 ```
